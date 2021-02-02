@@ -1,6 +1,9 @@
 'use strict';
 
-const stats = require('ep_etherpad-lite/node/stats');
+const stats = require('../../stats');
+
+exports.expressCreateServer = (hook_name, args, cb) => {
+  exports.app = args.app;
 
 /**
  * Express already comes with an error handler that is attached

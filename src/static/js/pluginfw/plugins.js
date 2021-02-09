@@ -2,8 +2,8 @@
 
 const fs = require('fs').promises;
 const hooks = require('./hooks');
-const readInstalled = require('./read-installed.js');
 const path = require('path');
+const runNpm = require('../../../node/utils/run_npm');
 const tsort = require('./tsort');
 const util = require('util');
 const settings = require('../../../node/utils/Settings');
@@ -69,28 +69,18 @@ exports.update = async () => {
 };
 
 exports.getPackages = async () => {
-  // Load list of installed NPM packages, flatten it to a list,
-  // and filter out only packages with names that
-  const dir = settings.root;
-  const data = await util.promisify(readInstalled)(dir);
-
-  const packages = {};
-  const flatten = (deps) => {
-    for (const [name, dep] of Object.entries(deps)) {
-      if (name.indexOf(exports.prefix) === 0) {
-        packages[name] = {...dep};
-        // Delete anything that creates loops so that the plugin
-        // list can be sent as JSON to the web client
-        delete packages[name].dependencies;
-        delete packages[name].parent;
-      }
-    }
-  };
-
-  const tmp = {};
-  tmp[data.name] = data;
-  flatten(tmp[data.name].dependencies);
-  return packages;
+  // Note: Do not pass `--prod` because it does not work if there is no package.json.
+  const np = runNpm(['ls', '--long', '--json', '--depth=0'], {stdoutLogger: null});
+  const chunks = [];
+  await Promise.all([
+    (async () => { for await (const chunk of np.stdout) chunks.push(chunk); })(),
+    np, // Await in parallel to avoid unhandled rejection if np rejects during chunk read.
+  ]);
+  const {dependencies = {}} = JSON.parse(Buffer.concat(chunks).toString());
+  for (const pkg of Object.keys(dependencies)) {
+    if (!pkg.startsWith(exports.prefix)) delete dependencies[pkg];
+  }
+  return dependencies;
 };
 
 const loadPlugin = async (packages, pluginName, plugins, parts) => {
